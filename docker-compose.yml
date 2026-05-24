@@ -8,15 +8,16 @@ services:
     ports:
       - "8443:8443" # Secure Admin HTTPS UI
     environment:
-      SINGLE_USER_CREDENTIALS_USERNAME: "admin"
-      SINGLE_USER_CREDENTIALS_PASSWORD: "argus-nifi-password-1234" # Minimum 12 characters required
+      SINGLE_USER_CREDENTIALS_USERNAME: "${NIFI_ADMIN_USER}"
+      SINGLE_USER_CREDENTIALS_PASSWORD: "${NIFI_ADMIN_PASSWORD}"
       NIFI_WEB_HTTPS_PORT: "8443"
-      NIFI_SENSITIVE_PROPS_KEY: "argus-nifi-sensitive-props-key-123" # Required to decrypt mounted flows
-      NIFI_JVM_HEAP_INIT: "512m"
-      NIFI_JVM_HEAP_MAX: "1g" # Memory-bounded for MacBook Air performance
+      NIFI_SENSITIVE_PROPS_KEY: "${NIFI_SENSITIVE_PROPS_KEY}"
+      NIFI_JVM_HEAP_INIT: "${NIFI_HEAP_INIT}"
+      NIFI_JVM_HEAP_MAX: "${NIFI_HEAP_MAX}"
     volumes:
       - nifi_data:/opt/nifi/nifi-current/data
       - nifi_conf:/opt/nifi/nifi-current/conf
+      - ./conf/nifi/flow.json.gz:/opt/nifi/nifi-current/conf/flow.json.gz
     networks:
       - data-platform
     restart: unless-stopped
@@ -36,9 +37,6 @@ services:
       KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
       
       # Network Interfaces & Listeners Configuration
-      # - PLAINTEXT (29092): Internal container-to-container communication (e.g. Kafka UI, NiFi, Spark)
-      # - CONTROLLER (29093): Internal cluster synchronization controller channel
-      # - PLAINTEXT_HOST (9092): Host development channel (e.g. running apps from your Mac localhost)
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092"
       KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092"
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
@@ -51,9 +49,10 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_LOG_DIRS: "/tmp/kraft-combined-logs"
+      KAFKA_LOG_RETENTION_HOURS: "${KAFKA_LOG_RETENTION_HOURS}"
       
       # Predefined 22-character Base64 UUID for local KRaft metadata initialization
-      CLUSTER_ID: "4L62xNx2Tda6nvSI7mD5dA"
+      CLUSTER_ID: "${KAFKA_CLUSTER_ID}"
     networks:
       - data-platform
     restart: unless-stopped
@@ -90,9 +89,9 @@ services:
       echo 'Waiting for Kafka broker...' &&
       cub kafka-ready -b kafka:29092 1 120 &&
       echo 'Creating telecom.cdr.raw...' &&
-      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic telecom.cdr.raw --partitions 3 --replication-factor 1 --config retention.ms=86400000 &&
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic telecom.cdr.raw --partitions 3 --replication-factor 1 --config retention.ms=${KAFKA_TOPIC_RETENTION_MS} &&
       echo 'Creating isp.ipdr.raw...' &&
-      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic isp.ipdr.raw --partitions 3 --replication-factor 1 --config retention.ms=86400000 &&
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic isp.ipdr.raw --partitions 3 --replication-factor 1 --config retention.ms=${KAFKA_TOPIC_RETENTION_MS} &&
       echo 'All topics provisioned successfully!'
       "
 
@@ -103,7 +102,7 @@ services:
     image: redis:7-alpine
     container_name: redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT}:6379"
     volumes:
       - redis_data:/data
     networks:
@@ -122,7 +121,7 @@ services:
     image: solr:9
     container_name: solr
     ports:
-      - "8983:8983"
+      - "${SOLR_PORT}:8983"
     volumes:
       - solr_data:/var/solr
     networks:
@@ -132,7 +131,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s # Relaxed startup period to allow slow local disks to mount
+      start_period: 30s
     restart: unless-stopped
 
   # ============================================================================
@@ -145,9 +144,8 @@ services:
       - "7474:7474" # HTTP Administration Panel
       - "7687:7687" # Bolt protocol connection port
     environment:
-      NEO4J_AUTH: "neo4j/argus-local-dev-password"
+      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD}"
       NEO4J_PLUGINS: '["apoc"]'
-      # Allow Neo4j to execute APOC plugins securely
       NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
       NEO4J_dbms_security_procedures_allowlist: "apoc.*"
     volumes:
@@ -158,11 +156,11 @@ services:
     networks:
       - data-platform
     healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "argus-local-dev-password", "RETURN 1"]
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "${NEO4J_PASSWORD}", "RETURN 1"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 45s # Safety window for container to fetch and install the APOC plugin over the net
+      start_period: 45s
     restart: unless-stopped
 
 # ==============================================================================
