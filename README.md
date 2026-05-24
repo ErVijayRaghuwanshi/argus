@@ -98,6 +98,7 @@ The repository is structured to separate system requirements and HLD models from
 | 📄 `architecture.md` | Detailed separate frontend & backend topology maps and data schemas. | [System Architecture (HLD)](docs/architecture.md) |
 | 📄 `ingestion.md` | Deep-dive on Edge ingestion, NiFi processing, and Kafka buffers. | [Ingestion Layer Architecture](docs/ingestion.md) |
 | 📄 `features.md` | End-user workspace capabilities, GIS tracking, and network graphs. | [User Features & Capabilities](docs/features.md) |
+| 📄 `sandbox_setup.md` | Guide for running local Kafka (KRaft), Kafka UI, Solr, and Neo4j. | [Local Sandbox Setup](docs/sandbox_setup.md) |
 | 🗂️ **`/src`** | Root development directory for source code components. *(Design Phase)* | [Browse Src Directory](src/) |
 
 ---

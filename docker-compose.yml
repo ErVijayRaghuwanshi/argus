@@ -1,0 +1,114 @@
+services:
+  # ============================================================================
+  # 1. Apache Kafka Ingestion Buffer (KRaft Mode - Zookeeper-Free)
+  # ============================================================================
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      # Node Roles & Identity
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      
+      # Network Interfaces & Listeners Configuration
+      # - PLAINTEXT (29092): Internal container-to-container communication (e.g. Kafka UI, Spark)
+      # - CONTROLLER (29093): Internal cluster synchronization controller channel
+      # - PLAINTEXT_HOST (9092): Host development channel (e.g. running apps from your Mac localhost)
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      
+      # Replication & Logging Tuning for Single-Broker Dev Sandbox
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIRS: "/tmp/kraft-combined-logs"
+      
+      # Predefined 22-character Base64 UUID for local KRaft metadata initialization
+      CLUSTER_ID: "4L62xNx2Tda6nvSI7mD5dA"
+    networks:
+      - data-platform
+    restart: unless-stopped
+
+  # ============================================================================
+  # 2. Kafka UI Dashboard (Web Visualizer)
+  # ============================================================================
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "local-kraft"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:29092"
+    networks:
+      - data-platform
+    restart: unless-stopped
+
+  # ============================================================================
+  # 3. Apache Solr (Multi-Column Ingest Header Search Index)
+  # ============================================================================
+  solr:
+    image: solr:9
+    container_name: solr
+    ports:
+      - "8983:8983"
+    volumes:
+      - solr_data:/var/solr
+    networks:
+      - data-platform
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8983/solr/admin/info/system || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================================================
+  # 4. Neo4j Graph Database (Spatial-Temporal Entity Correlation)
+  # ============================================================================
+  neo4j:
+    image: neo4j:5-community
+    container_name: neo4j
+    ports:
+      - "7474:7474" # HTTP Administration Panel
+      - "7687:7687" # Bolt protocol connection port
+    environment:
+      NEO4J_AUTH: "neo4j/argus-local-dev-password"
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+      - neo4j_plugins:/plugins
+    networks:
+      - data-platform
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "argus-local-dev-password", "RETURN 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+# ==============================================================================
+# Network & Volume Bindings
+# ==============================================================================
+networks:
+  data-platform:
+    driver: bridge
+    name: data-platform
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  neo4j_plugins:
+  solr_data:
