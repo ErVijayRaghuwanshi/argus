@@ -6,12 +6,13 @@ This guide describes how to run and verify the local development infrastructure 
 
 ## 🏛️ Architecture Overview
 
-The local infrastructure consists of six primary containers connected via the `data-platform` bridge network. This setup guarantees immediate service-to-service hostname resolution while exposing ports cleanly on your local Mac localhost.
+The local infrastructure consists of seven primary containers connected via the `data-platform` bridge network. This setup guarantees immediate service-to-service hostname resolution while exposing ports cleanly on your local Mac localhost.
 
 ```mermaid
 graph TD
     subgraph DataPlatform ["data-platform Bridge Network"]
-        NIFI["nifi (Port 8443)"] -->|Streams| K["kafka (Ports 29092/29093)"]
+        NIFI["nifi (Port 8443)"] <--> REG["nifi-registry (Port 18080)"]
+        NIFI -->|Streams| K["kafka (Ports 29092/29093)"]
         K <--> KUI["kafka-ui (Port 8080)"]
         SOLR[("solr (Port 8983)")]
         NEO[("neo4j (Ports 7474/7687)")]
@@ -19,6 +20,7 @@ graph TD
     end
     
     UI["Mac Browser / Terminal"] -.->|HTTPS Port 8443| NIFI
+    UI -.->|Port 18082| REG
     UI -.->|Port 8080| KUI
     UI -.->|Port 7474/7687| NEO
     UI -.->|Port 8983| SOLR
@@ -35,6 +37,7 @@ Below is the routing table and configuration reference for accessing the sandbox
 | Service | Internal URL (Bridge Net) | External URL (Your Mac) | Credentials | Purpose / Tool Role |
 | :--- | :--- | :--- | :--- | :--- |
 | **Apache NiFi** | `nifi:8443` | `https://localhost:8443` | `admin` / `argus-nifi-password-1234` | Edge files listing, ingestion, and parsing gateway. |
+| **NiFi Registry**| `nifi-registry:18080`| `http://localhost:18082` | Anonymous (No Auth) | **GitOps Version Control** for your dataflow pipelines. |
 | **Apache Kafka** | `kafka:29092` | `localhost:9092` | Anonymous (No Auth) | High-speed ingestion persistent buffer. |
 | **Kafka UI** | *N/A* | `http://localhost:8080` | Anonymous (No Auth) | Visualizer for topics, groups, and payloads. |
 | **Redis Cache** | `redis:6379` | `localhost:6379` | Anonymous (No Auth) | Sub-millisecond session state and target tracking cache. |
@@ -69,13 +72,13 @@ To tail system stdout/stderr streams across all services:
 ```bash
 docker compose logs -f
 ```
-Or for a specific container (e.g., Neo4j):
+Or for a specific container (e.g., NiFi Registry):
 ```bash
-docker compose logs -f neo4j
+docker compose logs -f nifi-registry
 ```
 
 ### 4. Stopping and Cleaning
-To pause the containers without losing your persisted graph relationships and search indexes:
+To pause the containers without losing your persisted states and search indexes:
 ```bash
 docker compose stop
 ```
@@ -90,6 +93,50 @@ docker compose down -v
 
 ---
 
+## 💾 GitOps: Official Flow Version Control Tutorial
+
+Integrating **Apache NiFi** with **NiFi Registry** establishes the official enterprise GitOps pipeline. This allows you to track, commit, version, and share your flows natively without manually dealing with JSON files in directories.
+
+Follow this one-time configuration sequence to link NiFi to the Registry:
+
+### Step 1: Create a Bucket in NiFi Registry
+1. Open **[http://localhost:18082/nifi-registry](http://localhost:18082/nifi-registry)** in your web browser.
+2. Click the **Settings (wrench) icon** in the top right.
+3. Click the **"New Bucket"** button.
+4. Name the bucket **`Argus Ingestion`** and click **Create**.
+
+---
+
+### Step 2: Register the Client inside Apache NiFi
+1. Open **[https://localhost:8443/nifi](https://localhost:8443/nifi)** in your web browser and log in.
+2. Click the **Hamburger menu icon (☰)** in the top right corner and select **Controller Settings**.
+3. Go to the **Registry Clients** tab.
+4. Click the **`+`** (Add) icon.
+5. Configure the Registry Client popup:
+   * **Name:** `Local Registry`
+   * **Client Type:** `NiFi Registry`
+   * **URL:** **`http://nifi-registry:18080`** *(Important: Always use the internal bridge network container name!)*
+6. Click **Add** and close the settings panel.
+
+---
+
+### Step 3: Start Version Control on Your Canvas
+Now you can version control any Process Group (including the one you imported!):
+1. **Drag your Process Group** onto the canvas (or import `conf/nifi/NiFi_Flow.json` once as described below).
+2. Right-click the **Process Group boundary box** on your canvas.
+3. Hover over **Version Control** and click **Start Version Control**.
+4. Configure the check-in parameters:
+   * **Registry Client:** Select `Local Registry` (automatically populated).
+   * **Bucket:** Select `Argus Ingestion` (automatically populated).
+   * **Flow Name:** `Argus Telemetry Stream`
+5. Click **Save**.
+
+Your Process Group will now show a **green checkmark icon** on the canvas, indicating it is officially in version control! 
+
+*   *Whenever you make changes, simply right-click the group, go to **Version Control**, and click **Commit Local Changes** to save a new declarative version instantly.*
+
+---
+
 ## 🔬 In-Sandbox Verification & Health Checks
 
 Once the containers are running, you can execute these simple terminal tests to ensure that our specialized streaming and database projections are fully functional.
@@ -101,7 +148,14 @@ curl -k -I https://localhost:8443/nifi
 ```
 *(Expected: HTTP `200 OK` or `302 Found` directing to login).*
 
-### 2. Apache Kafka Ingestion Check
+### 2. NiFi Registry Health Check
+Confirm the Registry is listening and serving clean metadata:
+```bash
+curl -I http://localhost:18082/nifi-registry
+```
+*(Expected: HTTP `200 OK`).*
+
+### 3. Apache Kafka Ingestion Check
 You can test topic creations and message broadcasts directly from your Mac command line.
 
 * **Create a Test Ingestion Topic**:
@@ -123,20 +177,20 @@ You can test topic creations and message broadcasts directly from your Mac comma
 * **Visualize in Kafka UI**:
   Open [http://localhost:8080](http://localhost:8080) in your web browser. You should see the cluster `local-kraft` active with your newly created topic.
 
-### 3. Redis State Cache Check
+### 4. Redis State Cache Check
 Ensure the in-memory cache responds instantly to programmatic audits:
 ```bash
 docker exec -it redis redis-cli ping
 ```
 *(Expected: `PONG`).*
 
-### 4. Apache Solr Index Check
+### 5. Apache Solr Index Check
 Ensure the Solr core engine can respond to diagnostic API calls.
 ```bash
 curl -s http://localhost:8983/solr/admin/info/system | grep solr_home
 ```
 
-### 5. Neo4j Graph Database Check
+### 6. Neo4j Graph Database Check
 Verify Bolt connectivity and confirm APOC execution algorithms:
 ```bash
 curl -I http://localhost:7474
@@ -175,8 +229,11 @@ lsof -i :8983
 
 # Check if Apache NiFi port is blocked
 lsof -i :8443
+
+# Check if NiFi Registry port is blocked
+lsof -i :18082
 ```
-* **Solution:** If a conflict exists, stop the native service on your Mac, or change the exposed host port in `docker-compose.yml` (e.g., mapping `8984:8983` for Solr, or `7475:7474` for Neo4j console).
+* **Solution:** If a conflict exists, stop the native service on your Mac, or change the exposed host port in `.env` (e.g. mapping `SOLR_PORT=8984` or `NIFI_REGISTRY_PORT=18081`).
 
 ### Step 3: Solve Neo4j APOC Net Outage Crashes
 When Neo4j first boots, it attempts to download the APOC library from Neo4j servers. If your Mac is offline or behind a strict firewall/VPN, the download fails and the container halts.
@@ -201,6 +258,7 @@ networks:
 ```
 Configure your application’s property bindings to resolve container names directly:
 * **NiFi HTTPS Link**: `https://nifi:8443`
+* **NiFi Registry**: `http://nifi-registry:18080`
 * **Kafka Bootstraps**: `kafka:29092`
 * **Redis Host**: `redis:6379`
 * **Solr Endpoint**: `http://solr:8983/solr`
@@ -209,45 +267,8 @@ Configure your application’s property bindings to resolve container names dire
 ### Option B: Running Natively on Your Mac Host
 If running application binaries directly on macOS:
 * **NiFi HTTPS Link**: `https://localhost:8443`
+* **NiFi Registry**: `http://localhost:18082`
 * **Kafka Bootstraps**: `localhost:9092`
 * **Redis Host**: `localhost:6379`
 * **Solr Endpoint**: `http://localhost:8983/solr`
 * **Neo4j URI**: `bolt://localhost:7687`
-
----
-
-## 💾 GitOps & Declarative Pipeline Ingress
-
-In Project Argus, we store our ingestion pipelines declaratively. This enables developers to share and review pipeline configurations in Git and deploy them programmatically without manual dragging-and-dropping.
-
-### 📁 Standardized File Layout
-* **`conf/nifi/NiFi_Flow.json`**: The human-readable source of truth. This contains the plain-text JSON structure of your connectors, processors, and NiFi parameters. This file is tracked by Git so that all flow changes are fully reviewable via code diffs in Pull Requests.
-* **`conf/nifi/flow.json.gz`**: The compiled, binary format read by Apache NiFi at boot time. This file is excluded from Git (via `.gitignore`) to keep the repository clean of unreadable binary blobs.
-
----
-
-### ⚙️ Developer Workflow
-
-#### Step 1: Initialize the Local Sandbox Flow
-Before you spin up Docker Compose, compile your plain-text flow into the compressed format that NiFi expects inside the container:
-```bash
-# Compress the JSON flow configuration to gzip format
-gzip -c conf/nifi/NiFi_Flow.json > conf/nifi/flow.json.gz
-```
-
-#### Step 2: Spin Up the Stack
-Run Docker Compose. NiFi will read the mounted `flow.json.gz` on boot and instantly render your preconfigured canvas:
-```bash
-docker compose up -d
-```
-
-#### Step 3: Modifying the Flow & Saving Back to Git
-If you make configuration changes (e.g. tweaking processor settings or adding new paths) inside the NiFi Web UI, you can easily save them back to Git:
-1. Right-click an empty space on the NiFi canvas and select **`Download Flow Definition`**.
-2. Save the downloaded `.json` file, overwriting **`conf/nifi/NiFi_Flow.json`** in your workspace.
-3. Re-compile the compressed file locally:
-   ```bash
-   gzip -c conf/nifi/NiFi_Flow.json > conf/nifi/flow.json.gz
-   ```
-4. Commit your human-readable **`conf/nifi/NiFi_Flow.json`** change to Git for code review!
-
