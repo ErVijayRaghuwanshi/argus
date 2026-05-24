@@ -1,27 +1,28 @@
 # Local Development Sandbox Setup Guide
 
-This guide describes how to run and verify the local development infrastructure for **Project Argus**. This environment hosts the entire specialized ingestion and multi-model database suite under a single, isolated Docker network using modern, Zookeeper-free **KRaft (Kafka Raft) metadata mode**.
+This guide describes how to run and verify the local development infrastructure for **Project Argus**. This environment hosts the entire specialized ingestion, caching, and multi-model database suite under a single, isolated Docker network using modern, Zookeeper-free **KRaft (Kafka Raft) metadata mode**.
 
 ---
 
 ## 🏛️ Architecture Overview
 
-The local infrastructure consists of four primary containers connected via the `data-platform` bridge network. This setup guarantees immediate service-to-service hostname resolution while exposing ports cleanly on your local Mac localhost.
+The local infrastructure consists of six primary containers connected via the `data-platform` bridge network. This setup guarantees immediate service-to-service hostname resolution while exposing ports cleanly on your local Mac localhost.
 
 ```mermaid
 graph TD
     subgraph DataPlatform ["data-platform Bridge Network"]
-        K["kafka (Ports 29092/29093)"]
-        KUI["kafka-ui (Port 8080)"]
+        NIFI["nifi (Port 8443)"] -->|Streams| K["kafka (Ports 29092/29093)"]
+        K <--> KUI["kafka-ui (Port 8080)"]
         SOLR[("solr (Port 8983)")]
         NEO[("neo4j (Ports 7474/7687)")]
-        
-        KUI --> K
+        REDIS[("redis (Port 6379)")]
     end
     
-    UI["Analyst Browser"] -.->|Port 8080| KUI
+    UI["Mac Browser / Terminal"] -.->|HTTPS Port 8443| NIFI
+    UI -.->|Port 8080| KUI
     UI -.->|Port 7474/7687| NEO
     UI -.->|Port 8983| SOLR
+    UI -.->|Port 6379| REDIS
     UI -.->|Port 9092| K
 ```
 
@@ -33,14 +34,17 @@ Below is the routing table and configuration reference for accessing the sandbox
 
 | Service | Internal URL (Bridge Net) | External URL (Your Mac) | Credentials | Purpose / Tool Role |
 | :--- | :--- | :--- | :--- | :--- |
+| **Apache NiFi** | `nifi:8443` | `https://localhost:8443` | `admin` / `argus-nifi-password-1234` | Edge files listing, ingestion, and parsing gateway. |
 | **Apache Kafka** | `kafka:29092` | `localhost:9092` | Anonymous (No Auth) | High-speed ingestion persistent buffer. |
 | **Kafka UI** | *N/A* | `http://localhost:8080` | Anonymous (No Auth) | Visualizer for topics, groups, and payloads. |
+| **Redis Cache** | `redis:6379` | `localhost:6379` | Anonymous (No Auth) | Sub-millisecond session state and target tracking cache. |
 | **Apache Solr** | `solr:8983` | `http://localhost:8983` | Anonymous (No Auth) | Text index and header search engine. |
 | **Neo4j Graph** | `neo4j:7687` (Bolt) | `localhost:7687` (Bolt) | `neo4j` / `argus-local-dev-password` | Entity relationship correlation. |
 | **Neo4j Console**| *N/A* | `http://localhost:7474` | `neo4j` / `argus-local-dev-password` | Interactive Cypher query dashboard. |
 
 > [!IMPORTANT]
-> The Neo4j community container in this sandbox is preconfigured with the **APOC (Awesome Procedures on Cypher)** plugin, which is essential for running the spatial, temporal, and pathfinding queries detailed in [Features & Capabilities](features.md#cytoscapejs-network-graphs).
+> * **NiFi Password Rule:** Apache NiFi requires a minimum credential password length of **12 characters**. Do not shorten `argus-nifi-password-1234` in your configs.
+> * **Neo4j APOC:** The Neo4j community container is preconfigured with the **APOC (Awesome Procedures on Cypher)** plugin, essential for spatial, temporal, and pathfinding queries. Security settings have been hardened in `docker-compose.yml` to allow unrestricted execution of APOC modules.
 
 ---
 
@@ -65,9 +69,9 @@ To tail system stdout/stderr streams across all services:
 ```bash
 docker compose logs -f
 ```
-Or for a specific container (e.g., Kafka):
+Or for a specific container (e.g., Neo4j):
 ```bash
-docker compose logs -f kafka
+docker compose logs -f neo4j
 ```
 
 ### 4. Stopping and Cleaning
@@ -90,7 +94,14 @@ docker compose down -v
 
 Once the containers are running, you can execute these simple terminal tests to ensure that our specialized streaming and database projections are fully functional.
 
-### 1. Apache Kafka Ingestion Check
+### 1. Apache NiFi Ingress Check
+Verify that the edge border gateway is up and serving secure administrative channels:
+```bash
+curl -k -I https://localhost:8443/nifi
+```
+*(Expected: HTTP `200 OK` or `302 Found` directing to login).*
+
+### 2. Apache Kafka Ingestion Check
 You can test topic creations and message broadcasts directly from your Mac command line.
 
 * **Create a Test Ingestion Topic**:
@@ -110,35 +121,68 @@ You can test topic creations and message broadcasts directly from your Mac comma
   ```
 
 * **Visualize in Kafka UI**:
-  Open [http://localhost:8080](http://localhost:8080) in your web browser. You should see the cluster `local-kraft` active with your newly created topic, partition offsets, and message counts completely visible.
+  Open [http://localhost:8080](http://localhost:8080) in your web browser. You should see the cluster `local-kraft` active with your newly created topic.
 
----
+### 3. Redis State Cache Check
+Ensure the in-memory cache responds instantly to programmatic audits:
+```bash
+docker exec -it redis redis-cli ping
+```
+*(Expected: `PONG`).*
 
-### 2. Apache Solr Index Check
+### 4. Apache Solr Index Check
 Ensure the Solr core engine can respond to diagnostic API calls.
+```bash
+curl -s http://localhost:8983/solr/admin/info/system | grep solr_home
+```
 
-* **Query Solr System Info**:
-  ```bash
-  curl -s http://localhost:8983/solr/admin/info/system | grep solr_home
-  ```
-
-* **Verify Solr Administration Console**:
-  Navigate to [http://localhost:8983](http://localhost:8983) to verify core metrics, heap distributions, and active document indexing logs.
+### 5. Neo4j Graph Database Check
+Verify Bolt connectivity and confirm APOC execution algorithms:
+```bash
+curl -I http://localhost:7474
+```
+Open [http://localhost:7474](http://localhost:7474), log in with `neo4j / argus-local-dev-password`, and execute:
+```cypher
+RETURN apoc.version() AS apoc_version;
+```
 
 ---
 
-### 3. Neo4j Graph Database Check
-Verify Bolt connectivity and confirm APOC execution algorithms.
+## 🛠️ Sandbox Troubleshooting & Diagnostics
 
-* **Verify Database Status via HTTP**:
-  ```bash
-  curl -I http://localhost:7474
-  ```
+If one or more containers (e.g. **Neo4j** or **Solr**) are not coming up, run through the following diagnosis steps to locate and resolve the issue.
 
-* **Execute Cypher & APOC Test Query**:
-  Open the Neo4j Web UI at [http://localhost:7474](http://localhost:7474), log in with the credentials `neo4j / argus-local-dev-password`, and execute this test query in the command prompt to verify APOC version integrity:
-  ```cypher
-  RETURN apoc.version() AS apoc_version;
+### Step 1: Inspect Container Startup Logs
+If a container fails to start, the Docker logs will tell you the exact java exception or permission lock:
+```bash
+# Check Neo4j error stack
+docker logs neo4j
+
+# Check Solr error stack
+docker logs solr
+```
+
+### Step 2: Diagnose Port Collisions on Your Mac
+If you are already running local instances of Neo4j, Redis, or Apache Solr natively on your MacBook, the Docker container will crash because its host port is already bound.
+To identify what is blocking the ports, run:
+```bash
+# Check if Neo4j ports are blocked
+lsof -i :7474
+lsof -i :7687
+
+# Check if Apache Solr port is blocked
+lsof -i :8983
+
+# Check if Apache NiFi port is blocked
+lsof -i :8443
+```
+* **Solution:** If a conflict exists, stop the native service on your Mac, or change the exposed host port in `docker-compose.yml` (e.g., mapping `8984:8983` for Solr, or `7475:7474` for Neo4j console).
+
+### Step 3: Solve Neo4j APOC Net Outage Crashes
+When Neo4j first boots, it attempts to download the APOC library from Neo4j servers. If your Mac is offline or behind a strict firewall/VPN, the download fails and the container halts.
+* **Solution (Offline Mode):** If you have no internet access during startup, you can temporarily disable the plugin downloader by commenting out the `NEO4J_PLUGINS` line in your `docker-compose.yml`:
+  ```yaml
+  # NEO4J_PLUGINS: '["apoc"]'
   ```
 
 ---
@@ -156,128 +200,54 @@ networks:
       name: data-platform
 ```
 Configure your application’s property bindings to resolve container names directly:
+* **NiFi HTTPS Link**: `https://nifi:8443`
 * **Kafka Bootstraps**: `kafka:29092`
+* **Redis Host**: `redis:6379`
 * **Solr Endpoint**: `http://solr:8983/solr`
 * **Neo4j URI**: `bolt://neo4j:7687`
 
 ### Option B: Running Natively on Your Mac Host
 If running application binaries directly on macOS:
+* **NiFi HTTPS Link**: `https://localhost:8443`
 * **Kafka Bootstraps**: `localhost:9092`
+* **Redis Host**: `localhost:6379`
 * **Solr Endpoint**: `http://localhost:8983/solr`
 * **Neo4j URI**: `bolt://localhost:7687`
 
+---
 
+## 💾 GitOps & Declarative Pipeline Ingress
 
-# Implementation Plan: Zookeeper-Free Local Infrastructure (KRaft & Docker Compose)
+In Project Argus, we store our ingestion pipelines declaratively. This enables developers to share and review pipeline configurations in Git and deploy them programmatically without manual dragging-and-dropping.
 
-This updated implementation plan eliminates the deprecated Apache ZooKeeper dependency in favor of **KRaft (Kafka Raft) metadata mode**. Running in KRaft mode substantially reduces local memory overhead (crucial for local laptop environments like macOS), accelerates start-up times, and aligns our setup with the modern production standards of Apache Kafka.
-
-We will orchestrate **Kafka**, **Kafka UI**, **Apache Solr**, and **Neo4j** under a unified, isolated bridge network (`data-platform`).
+### 📁 Standardized File Layout
+* **`conf/nifi/NiFi_Flow.json`**: The human-readable source of truth. This contains the plain-text JSON structure of your connectors, processors, and NiFi parameters. This file is tracked by Git so that all flow changes are fully reviewable via code diffs in Pull Requests.
+* **`conf/nifi/flow.json.gz`**: The compiled, binary format read by Apache NiFi at boot time. This file is excluded from Git (via `.gitignore`) to keep the repository clean of unreadable binary blobs.
 
 ---
 
-## 🏛️ Strategic Goals
+### ⚙️ Developer Workflow
 
-1. **Modern ZooKeeper-Free Setup**: Configure Apache Kafka in KRaft mode, acting as both broker and controller in a single container.
-2. **Integrated Service Mesh**: Host all services in a single Docker bridge network (`data-platform`) enabling native container DNS lookup.
-3. **Persisted Volumes**: Maintain Solr indices and Neo4j graph nodes across container lifetimes using isolated Docker named volumes.
-4. **Optimized Local footprint**: Maximize system resource availability by dropping Zookeeper, and defining custom lightweight memory boundaries where appropriate.
-
----
-
-## 📂 Proposed Changes
-
-We will introduce the following files into the repository root:
-1. `docker-compose.yml` - Multi-container setup utilizing KRaft and specialized databases.
-2. `.gitignore` - Standard project ignore profiles.
-
----
-
-### 1. Multi-Container Orchestration
-
-#### [NEW] [docker-compose.yml](file:///Users/ervijay/Documents/Programs/Repo/argus/docker-compose.yml)
-
-We will define 4 interconnected services running on the `data-platform` bridge network:
-
-```mermaid
-graph TD
-    subgraph DataPlatform ["data-platform Bridge Network"]
-        K["kafka (Ports 29092/29093)"]
-        KUI["kafka-ui (Port 8080)"]
-        SOLR[("solr (Port 8983)")]
-        NEO[("neo4j (Ports 7474/7687)")]
-        
-        KUI --> K
-    end
-    
-    UI["Analyst Browser"] -.->|Port 8080| KUI
-    UI -.->|Port 7474/7687| NEO
-    UI -.->|Port 8983| SOLR
-    UI -.->|Port 9092| K
+#### Step 1: Initialize the Local Sandbox Flow
+Before you spin up Docker Compose, compile your plain-text flow into the compressed format that NiFi expects inside the container:
+```bash
+# Compress the JSON flow configuration to gzip format
+gzip -c conf/nifi/NiFi_Flow.json > conf/nifi/flow.json.gz
 ```
 
-##### A. Ingestion Buffer (KRaft Kafka Stack)
-* **`kafka`**: The core data shock-absorber, configured in Zookeeper-free KRaft mode.
-  * **Image**: `confluentinc/cp-kafka:7.6.0`
-  * **Ports**: `9092:9092` (Host-level ingress)
-  * **Environment**:
-    * `KAFKA_NODE_ID: 1`
-    * `KAFKA_PROCESS_ROLES: 'broker,controller'`
-    * `KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'`
-    * `KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092'`
-    * `KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'`
-    * `KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'`
-    * `KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'`
-    * `KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'`
-    * `KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1`
-    * `CLUSTER_ID: '4L62xNx2Tda6nvSI7mD5dA'` (A predefined, standard base64 UUID for local KRaft metadata initiation).
-* **`kafka-ui`**: Topic and cluster visualization controller.
-  * **Image**: `provectuslabs/kafka-ui:latest`
-  * **Ports**: `8080:8080`
-  * **Environment**:
-    * `KAFKA_CLUSTERS_0_NAME: local-kraft`
-    * `KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092` (Resolves broker natively within the bridge network).
+#### Step 2: Spin Up the Stack
+Run Docker Compose. NiFi will read the mounted `flow.json.gz` on boot and instantly render your preconfigured canvas:
+```bash
+docker compose up -d
+```
 
-##### B. Database Stack
-* **`solr`**: Columnar search engine index.
-  * **Image**: `solr:9`
-  * **Ports**: `8983:8983`
-  * **Volumes**: `solr_data:/var/solr` (Persistent volume mount)
-  * **Healthcheck**: `curl -f http://localhost:8983/solr/admin/info/system`
-* **`neo4j`**: Native relationship graph engine.
-  * **Image**: `neo4j:5-community`
-  * **Ports**: `7474:7474` (HTTP), `7687:7687` (Bolt binary link)
-  * **Volumes**:
-    * `neo4j_data:/data` (Persisted database state)
-    * `neo4j_logs:/logs`
-    * `neo4j_import:/var/lib/neo4j/import`
-  * **Environment**: `NEO4J_AUTH=neo4j/argus-local-dev-password` and `NEO4J_PLUGINS=["apoc"]`
-  * **Healthcheck**: Cypher evaluation verification `RETURN 1` via `cypher-shell`.
+#### Step 3: Modifying the Flow & Saving Back to Git
+If you make configuration changes (e.g. tweaking processor settings or adding new paths) inside the NiFi Web UI, you can easily save them back to Git:
+1. Right-click an empty space on the NiFi canvas and select **`Download Flow Definition`**.
+2. Save the downloaded `.json` file, overwriting **`conf/nifi/NiFi_Flow.json`** in your workspace.
+3. Re-compile the compressed file locally:
+   ```bash
+   gzip -c conf/nifi/NiFi_Flow.json > conf/nifi/flow.json.gz
+   ```
+4. Commit your human-readable **`conf/nifi/NiFi_Flow.json`** change to Git for code review!
 
----
-
-### 2. Workspace Hygiene
-
-#### [NEW] [.gitignore](file:///Users/ervijay/Documents/Programs/Repo/argus/.gitignore)
-* Ignore `.DS_Store` and standard local environment lock files.
-* Ensure local developer host directories for binds (if any) are kept out of active git commits.
-
----
-
-## 🔬 Verification Plan
-
-We will boot and test the entire container stack using terminal verification commands.
-
-### Automated Verification
-After running `docker compose up -d`, we will execute:
-1. `docker compose ps` to verify all 4 containers (`kafka`, `kafka-ui`, `solr`, `neo4j`) are in a healthy running state.
-2. Direct connection endpoints health audits:
-   * **Kafka-UI**: `curl -I http://localhost:8080`
-   * **Solr Console**: `curl -I http://localhost:8983/solr/`
-   * **Neo4j Console**: `curl -I http://localhost:7474`
-
-### Manual Verification
-Verify UI dashboard and console integrity:
-* Open Kafka UI at [http://localhost:8080](http://localhost:8080) to inspect the active KRaft cluster metadata.
-* Open Neo4j console at [http://localhost:7474](http://localhost:7474) and login using `neo4j` and `argus-local-dev-password`.
-* Access Solr admin screen at [http://localhost:8983](http://localhost:8983).
