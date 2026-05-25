@@ -6,13 +6,14 @@ This guide describes how to run and verify the local development infrastructure 
 
 ## 🏛️ Architecture Overview
 
-The local infrastructure consists of seven primary containers connected via the `data-platform` bridge network. This setup guarantees immediate service-to-service hostname resolution while exposing ports cleanly on your local Mac localhost.
+The local infrastructure consists of **eight primary containers** connected via the `data-platform` bridge network. This setup guarantees immediate service-to-service hostname resolution while exposing ports cleanly on your local Mac localhost.
 
 ```mermaid
 graph TD
     subgraph DataPlatform ["data-platform Bridge Network"]
         NIFI["nifi (Port 8443)"] <--> REG["nifi-registry (Port 18080)"]
-        NIFI -->|Streams| K["kafka (Ports 29092/29093)"]
+        SF["signal-forge (Generator)"] -->|Simulated Streams| K["kafka (Ports 29092/29093)"]
+        NIFI -->|Streams| K
         K <--> KUI["kafka-ui (Port 8080)"]
         SOLR[("solr (Port 8983)")]
         NEO[("neo4j (Ports 7474/7687)")]
@@ -44,6 +45,7 @@ Below is the routing table and configuration reference for accessing the sandbox
 | **Apache Solr** | `solr:8983` | `http://localhost:8983` | Anonymous (No Auth) | Text index and header search engine. |
 | **Neo4j Graph** | `neo4j:7687` (Bolt) | `localhost:7687` (Bolt) | `neo4j` / `argus-local-dev-password` | Entity relationship correlation. |
 | **Neo4j Console**| *N/A* | `http://localhost:7474` | `neo4j` / `argus-local-dev-password` | Interactive Cypher query dashboard. |
+| **SignalForge**  | `signal-forge` (internal) | *N/A* (No exposed host ports)| Anonymous | High-fidelity synthetic telecom logs generator (runs stream). |
 
 > [!IMPORTANT]
 > * **NiFi Password Rule:** Apache NiFi requires a minimum credential password length of **12 characters**. Do not shorten `argus-nifi-password-1234` in your configs.
