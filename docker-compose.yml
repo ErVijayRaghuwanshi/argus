@@ -189,7 +189,7 @@ services:
   # ============================================================================
   signal-forge:
     build:
-      context: "../../../antigravity/brave-curie"
+      context: "../signal-forge"
       dockerfile: Dockerfile
     container_name: signal-forge
     depends_on:
