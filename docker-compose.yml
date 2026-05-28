@@ -36,8 +36,9 @@ services:
       NIFI_REGISTRY_FLOW_STORAGE_DIR: "/opt/nifi-registry/nifi-registry-current/flow_storage"
     volumes:
       - registry_database:/opt/nifi-registry/nifi-registry-current/database
-      - registry_flow_storage:/opt/nifi-registry/nifi-registry-current/flow_storage
+      - ./flow-storage:/opt/nifi-registry/nifi-registry-current/flow_storage
       - registry_conf:/opt/nifi-registry/nifi-registry-current/conf
+      - ./conf/nifi-registry/providers.xml:/opt/nifi-registry/nifi-registry-current/conf/providers.xml
     networks:
       - data-platform
     restart: unless-stopped
