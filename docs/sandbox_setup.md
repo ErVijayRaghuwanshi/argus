@@ -6,7 +6,7 @@ This guide describes how to run and verify the local development infrastructure 
 
 ## 🏛️ Architecture Overview
 
-The local infrastructure consists of **eight primary containers** connected via the `data-platform` bridge network. This setup guarantees immediate service-to-service hostname resolution while exposing ports cleanly on your local Mac localhost.
+The local infrastructure consists of **ten primary containers** connected via the `data-platform` bridge network. This setup guarantees immediate service-to-service hostname resolution while exposing ports cleanly on your local Mac localhost.
 
 ```mermaid
 graph TD
@@ -18,6 +18,8 @@ graph TD
         SOLR[("solr (Port 8983)")]
         NEO[("neo4j (Ports 7474/7687)")]
         REDIS[("redis (Port 6379)")]
+        SPARK_M["spark-master (Port 7077)"] <--> SPARK_W["spark-worker (Port 8081)"]
+        SPARK_M -->|Consumes Streams| K
     end
     
     UI["Mac Browser / Terminal"] -.->|HTTPS Port 8443| NIFI
@@ -27,6 +29,8 @@ graph TD
     UI -.->|Port 8983| SOLR
     UI -.->|Port 6379| REDIS
     UI -.->|Port 9092| K
+    UI -.->|Port 8085| SPARK_M
+    UI -.->|Port 8086| SPARK_W
 ```
 
 ---
@@ -46,6 +50,8 @@ Below is the routing table and configuration reference for accessing the sandbox
 | **Neo4j Graph** | `neo4j:7687` (Bolt) | `localhost:7687` (Bolt) | `neo4j` / `argus-local-dev-password` | Entity relationship correlation. |
 | **Neo4j Console**| *N/A* | `http://localhost:7474` | `neo4j` / `argus-local-dev-password` | Interactive Cypher query dashboard. |
 | **SignalForge**  | `signal-forge` (internal) | *N/A* (No exposed host ports)| Anonymous | High-fidelity synthetic telecom logs generator (runs stream). |
+| **Spark Master** | `spark-master:7077` | `http://localhost:8085` | Anonymous (No Auth) | Standalone cluster master manager (Web UI on 8085). |
+| **Spark Worker** | `spark-worker:8081` | `http://localhost:8086` | Anonymous (No Auth) | Standalone worker node executor (Web UI on 8086). |
 
 > [!IMPORTANT]
 > * **NiFi Password Rule:** Apache NiFi requires a minimum credential password length of **12 characters**. Do not shorten `argus-nifi-password-1234` in your configs.

@@ -5,6 +5,7 @@ services:
   nifi:
     image: apache/nifi:2.9.0
     container_name: nifi
+    user: "root"
     ports:
       - "${NIFI_PORT:-8443}:8443" # Secure Admin HTTPS UI
     environment:
@@ -27,6 +28,7 @@ services:
   nifi-registry:
     image: apache/nifi-registry:2.9.0
     container_name: nifi-registry
+    user: "root"
     ports:
       - "${NIFI_REGISTRY_PORT}:18080"
     environment:
@@ -68,6 +70,8 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_LOG_DIRS: "/tmp/kraft-combined-logs"
       KAFKA_LOG_RETENTION_HOURS: "${KAFKA_LOG_RETENTION_HOURS}"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
       
       # Predefined 22-character Base64 UUID for local KRaft metadata initialization
       CLUSTER_ID: "${KAFKA_CLUSTER_ID}"
@@ -91,30 +95,6 @@ services:
     networks:
       - data-platform
     restart: unless-stopped
-
-  # ============================================================================
-  # 3b. Kafka Declarative Topic Provisioner (Runs on startup and exits)
-  # ============================================================================
-  kafka-init:
-    image: confluentinc/cp-kafka:8.1.3
-    container_name: kafka-init
-    depends_on:
-      - kafka
-    networks:
-      - data-platform
-    command: >
-      sh -c "
-      echo 'Waiting for Kafka broker...' &&
-      until kafka-topics --bootstrap-server kafka:29092 --list > /dev/null 2>&1; do
-        echo 'Kafka is not ready yet, sleeping 2s...'
-        sleep 2
-      done &&
-      echo 'Kafka is ready! Creating telecom.cdr.raw...' &&
-      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic telecom.cdr.raw --partitions 3 --replication-factor 1 --config retention.ms=${KAFKA_TOPIC_RETENTION_MS} &&
-      echo 'Creating isp.ipdr.raw...' &&
-      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic isp.ipdr.raw --partitions 3 --replication-factor 1 --config retention.ms=${KAFKA_TOPIC_RETENTION_MS} &&
-      echo 'All topics provisioned successfully!'
-      "
 
   # ============================================================================
   # 4. Redis In-Memory Transactional Cache (Fast Session & Target Tracking)
@@ -193,8 +173,7 @@ services:
       dockerfile: Dockerfile
     container_name: signal-forge
     depends_on:
-      kafka-init:
-        condition: service_completed_successfully
+      - kafka
     networks:
       - data-platform
     command: >
@@ -206,6 +185,56 @@ services:
       --kafka-bootstrap kafka:29092
       --kafka-cdr-topic ${KAFKA_CDR_TOPIC:-cdr-records}
       --kafka-ipdr-topic ${KAFKA_IPDR_TOPIC:-ipdr-records}
+    restart: unless-stopped
+
+  # ============================================================================
+  # 8. Apache Spark Standalone Cluster (Master & Worker Core)
+  # ============================================================================
+  spark-master:
+    build:
+      context: .
+      dockerfile: conf/spark.Dockerfile
+    image: argus-spark-custom:4.1.2
+    container_name: spark-master
+    ports:
+      - "${SPARK_MASTER_PORT:-7077}:7077"
+      - "${SPARK_MASTER_WEBUI_PORT:-8085}:8080"
+      - "${SPARK_HISTORY_WEBUI_PORT:-18088}:18080"
+    command: >
+      sh -c "
+      mkdir -p /opt/spark/event_logs &&
+      /opt/spark/bin/spark-class -Dspark.history.fs.logDirectory=file:/opt/spark/event_logs -Dspark.history.ui.port=18080 org.apache.spark.deploy.history.HistoryServer &
+      /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master --port 7077 --webui-port 8080
+      "
+    volumes:
+      - spark_event_logs:/opt/spark/event_logs
+      - spark_ivy_cache:/tmp/.ivy
+      - ./example:/tmp/example
+    networks:
+      - data-platform
+    restart: unless-stopped
+
+  spark-worker:
+    build:
+      context: .
+      dockerfile: conf/spark.Dockerfile
+    image: argus-spark-custom:4.1.2
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    ports:
+      - "${SPARK_WORKER_WEBUI_PORT:-8086}:8081"
+    command: >
+      /opt/spark/bin/spark-class
+      org.apache.spark.deploy.worker.Worker
+      spark://spark-master:7077
+      --webui-port 8081
+    volumes:
+      - spark_event_logs:/opt/spark/event_logs
+      - spark_ivy_cache:/tmp/.ivy
+      - ./example:/tmp/example
+    networks:
+      - data-platform
     restart: unless-stopped
 
 # ==============================================================================
@@ -228,3 +257,5 @@ volumes:
   registry_database:
   registry_flow_storage:
   registry_conf:
+  spark_event_logs:
+  spark_ivy_cache:
