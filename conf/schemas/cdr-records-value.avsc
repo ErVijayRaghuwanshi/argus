@@ -1,0 +1,73 @@
+{
+  "type": "record",
+  "name": "CallDetailRecord",
+  "namespace": "argus.telecom",
+  "doc": "Avro schema representing Call Detail Records (CDR) processed in the Argus platform.",
+  "fields": [
+    {
+      "name": "RECORD_ID",
+      "type": "string",
+      "doc": "Unique tracking ID of the call/SMS transaction."
+    },
+    {
+      "name": "TIMESTAMP",
+      "type": "string",
+      "doc": "UTC timestamp when the transaction occurred."
+    },
+    {
+      "name": "CALLING_NUM",
+      "type": "string",
+      "doc": "Phone number originating the event in E.164 format."
+    },
+    {
+      "name": "CALLED_NUM",
+      "type": "string",
+      "doc": "Dialed phone number receiving the event in E.164 format."
+    },
+    {
+      "name": "CALL_TYPE",
+      "type": "string",
+      "doc": "Category of telecommunication (e.g., VOICE, SMS)."
+    },
+    {
+      "name": "DURATION_SEC",
+      "type": "int",
+      "doc": "Call duration in seconds. Set to 0 for SMS."
+    },
+    {
+      "name": "CALLER_IMSI",
+      "type": "string",
+      "doc": "International Mobile Subscriber Identity mapping to the SIM card."
+    },
+    {
+      "name": "CALLER_IMEI",
+      "type": "string",
+      "doc": "International Mobile Equipment Identity mapping to the physical device."
+    },
+    {
+      "name": "CALLER_MNO",
+      "type": "string",
+      "doc": "Mobile Network Operator serving the client (e.g. Jio, Airtel)."
+    },
+    {
+      "name": "BTS_ID",
+      "type": "string",
+      "doc": "Base Transceiver Station cell tower identifier."
+    },
+    {
+      "name": "CELL_ID",
+      "type": "int",
+      "doc": "Geographic cellular grid sector identifier."
+    },
+    {
+      "name": "LAC",
+      "type": "int",
+      "doc": "Location Area Code grouping towers."
+    },
+    {
+      "name": "STATUS",
+      "type": "string",
+      "doc": "Ingestion or connection termination status (e.g., SUCCESS, FAILED)."
+    }
+  ]
+}

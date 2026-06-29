@@ -16,7 +16,12 @@ Below is the initial system design blueprint, breaking down the exact strategic 
 ### Apache Kafka (The Persistent Core Buffer)
 
 * **Strategic Importance:** At a scale of 5 to 10 billion events daily, unexpected spikes can knock down distributed database endpoints. Kafka serves as an immutable, partitioned, shock-absorbing log queue.
-* **Role in This Project:** It isolates your ingestion boundary from compute layers. NiFi immediately serializes parsed records straight into separate, heavily partitioned Kafka topics (`telecom.cdr.raw` and `isp.ipdr.raw`). This guarantees that even if downstream analytics jobs are processing massive heavy calculations, zero data packets are dropped at the intake edge. Detailed partitioning rules, topic properties, and durability standards are specified in [Ingestion Layer Architecture](ingestion.md#3-buffer-layer-apache-kafka-partitioning-strategy).
+* **Role in This Project:** It isolates your ingestion boundary from compute layers. NiFi serializes parsed records into Avro format and routes them to partitioned Kafka topics (`telecom.cdr.raw` and `isp.ipdr.raw`). This guarantees that even if downstream analytics jobs are processing massive heavy calculations, zero data packets are dropped at the intake edge. Detailed partitioning rules, topic properties, and durability standards are specified in [Ingestion Layer Architecture](ingestion.md#3-buffer-layer-apache-kafka-partitioning-strategy).
+
+### Apache Schema Registry (The Schema Source of Truth)
+
+* **Strategic Importance:** High-volume telemetry networks cannot afford the performance and storage overhead of verbose serialization formats like JSON. A Schema Registry allows the platform to use compact, binary serialization formats like Apache Avro or Protocol Buffers (Protobuf).
+* **Role in This Project:** It acts as the central directory for storing, serving, and versioning data schemas. Apache NiFi queries the registry to serialize incoming records into Avro, and Apache Spark references it to dynamically retrieve schemas during consumer deserialization, enforcing strict data quality and backward compatibility.
 
 ---
 
@@ -115,17 +120,20 @@ graph TD
     end
 
     subgraph Edge[Data Ingress & Shock Absorption Layer]
-        B[Apache NiFi Clusters]:::ingest -->|Raw Parsing & Schema Check| C[Apache Kafka Partitioned Brokers]:::ingest
+        B[Apache NiFi Clusters]:::ingest -->|Raw Parsing & Write Avro| C[Apache Kafka Partitioned Brokers]:::ingest
         C1[(CDR Kafka Topic)]:::ingest
         C2[(IPRD Kafka Topic)]:::ingest
         C --> C1
         C --> C2
+        SR[Kafka Schema Registry]:::ingest
+        B -.->|Fetch/Register Schemas| SR
     end
 
     subgraph DistributedBrain[Core Compute & ACID Storage Brain]
         D[Apache Spark Structured Streaming]:::compute
         C1 -->|Micro-batch Ingest| D
         C2 -->|Micro-batch Ingest| D
+        D -.->|Fetch Schemas| SR
         
         D -->|Write-Ahead Log & ACID Compaction| E[Delta Lake Transactions]:::storage
         E -->|Columnar Parquet Records| E1[(HDFS Distributed Storage)]:::storage

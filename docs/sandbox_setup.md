@@ -15,16 +15,21 @@ graph TD
         SF["signal-forge (Generator)"] -->|Simulated Streams| K["kafka (Ports 29092/29093)"]
         NIFI -->|Streams| K
         K <--> KUI["kafka-ui (Port 8080)"]
+        SR["schema-registry (Port 8081)"]
+        NIFI -.-> SR
+        KUI <--> SR
         SOLR[("solr (Port 8983)")]
         NEO[("neo4j (Ports 7474/7687)")]
         REDIS[("redis (Port 6379)")]
         SPARK_M["spark-master (Port 7077)"] <--> SPARK_W["spark-worker (Port 8081)"]
         SPARK_M -->|Consumes Streams| K
+        SPARK_M -.-> SR
     end
     
     UI["Mac Browser / Terminal"] -.->|HTTPS Port 8443| NIFI
     UI -.->|Port 18082| REG
     UI -.->|Port 8080| KUI
+    UI -.->|Port 8081| SR
     UI -.->|Port 7474/7687| NEO
     UI -.->|Port 8983| SOLR
     UI -.->|Port 6379| REDIS
@@ -44,7 +49,8 @@ Below is the routing table and configuration reference for accessing the sandbox
 | **Apache NiFi** | `nifi:8443` | `https://localhost:8443` | `admin` / `argus-nifi-password-1234` | Edge files listing, ingestion, and parsing gateway. |
 | **NiFi Registry**| `nifi-registry:18080`| `http://localhost:18082` | Anonymous (No Auth) | **GitOps Version Control** for your dataflow pipelines. |
 | **Apache Kafka** | `kafka:29092` | `localhost:9092` | Anonymous (No Auth) | High-speed ingestion persistent buffer. |
-| **Kafka UI** | *N/A* | `http://localhost:8080` | Anonymous (No Auth) | Visualizer for topics, groups, and payloads. |
+| **Schema Registry**| `schema-registry:8081`| `http://localhost:8081` | Anonymous (No Auth) | Centralized schema catalog for Avro serialization. |
+| **Kafka UI** | *N/A* | `http://localhost:8080` | Anonymous (No Auth) | Visualizer for topics, groups, schemas, and payloads. |
 | **Redis Cache** | `redis:6379` | `localhost:6379` | Anonymous (No Auth) | Sub-millisecond session state and target tracking cache. |
 | **Apache Solr** | `solr:8983` | `http://localhost:8983` | Anonymous (No Auth) | Text index and header search engine. |
 | **Neo4j Graph** | `neo4j:7687` (Bolt) | `localhost:7687` (Bolt) | `neo4j` / `argus-local-dev-password` | Entity relationship correlation. |
@@ -185,6 +191,15 @@ You can test topic creations and message broadcasts directly from your Mac comma
 * **Visualize in Kafka UI**:
   Open [http://localhost:8080](http://localhost:8080) in your web browser. You should see the cluster `local-kraft` active with your newly created topic.
 
+### 3b. Kafka Schema Registry Check
+Verify that the Schema Registry is up and serving API requests:
+```bash
+curl -i http://localhost:8081/subjects
+```
+*(Expected: HTTP `200 OK` returning an empty JSON list `[]` or list of registered subjects).*
+
+Verify integration in **Kafka UI** by navigating to [http://localhost:8080](http://localhost:8080). You should see the "Schema Registry" section enabled in the left navigation sidebar.
+
 ### 4. Redis State Cache Check
 Ensure the in-memory cache responds instantly to programmatic audits:
 ```bash
@@ -268,6 +283,7 @@ Configure your application’s property bindings to resolve container names dire
 * **NiFi HTTPS Link**: `https://nifi:8443`
 * **NiFi Registry**: `http://nifi-registry:18080`
 * **Kafka Bootstraps**: `kafka:29092`
+* **Schema Registry**: `http://schema-registry:8081`
 * **Redis Host**: `redis:6379`
 * **Solr Endpoint**: `http://solr:8983/solr`
 * **Neo4j URI**: `bolt://neo4j:7687`
@@ -277,6 +293,7 @@ If running application binaries directly on macOS:
 * **NiFi HTTPS Link**: `https://localhost:8443`
 * **NiFi Registry**: `http://localhost:18082`
 * **Kafka Bootstraps**: `localhost:9092`
+* **Schema Registry**: `http://localhost:8081`
 * **Redis Host**: `localhost:6379`
 * **Solr Endpoint**: `http://localhost:8983/solr`
 * **Neo4j URI**: `bolt://localhost:7687`

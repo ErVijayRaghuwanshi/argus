@@ -92,6 +92,11 @@ segment.bytes=1073741824  # 1GB active log segment rollover
 * **acks=all:** Prevents the producer (NiFi) from receiving a success write token until all active in-sync brokers have replicated the message.
 * **LZ4 Compression:** Minimizes network packet payload sizes between NiFi, Kafka, and Spark, reducing serialization CPU bottlenecks.
 
+### 3.4 Schema Registry & Serialization Formats
+To ingest billions of events daily without excessive resource consumption, the ingestion pipeline transitions from raw JSON to compact binary serialization:
+* **Apache Avro Serialization**: Apache NiFi serializes parsed telecommunication logs into Avro format. Avro strips verbose key names from the payload, sending only a 5-byte header containing the Schema ID registered in the **Kafka Schema Registry** followed by compact binary data.
+* **Schema Evolution & Validation**: The central Schema Registry enforces compatibility rules (such as **BACKWARD** compatibility). This prevents upstream producer modifications (e.g. adding nullable columns or renaming metadata fields) from crashing downstream processing engines like **Apache Spark** or corrupting tables in Delta Lake.
+
 ---
 
 ## 4. Backpressure Management & Resilience
