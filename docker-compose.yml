@@ -219,6 +219,7 @@ services:
       dockerfile: conf/spark.Dockerfile
     image: argus-spark-custom:4.1.2
     container_name: spark-master
+    user: "root"
     ports:
       - "${SPARK_MASTER_PORT:-7077}:7077"
       - "${SPARK_MASTER_WEBUI_PORT:-8085}:8080"
@@ -233,6 +234,7 @@ services:
       - spark_event_logs:/opt/spark/event_logs
       - spark_ivy_cache:/tmp/.ivy
       - ./example:/tmp/example
+      - ./src:/tmp/src
     networks:
       - data-platform
     restart: unless-stopped
@@ -243,6 +245,7 @@ services:
       dockerfile: conf/spark.Dockerfile
     image: argus-spark-custom:4.1.2
     container_name: spark-worker
+    user: "root"
     depends_on:
       - spark-master
     ports:
@@ -256,6 +259,7 @@ services:
       - spark_event_logs:/opt/spark/event_logs
       - spark_ivy_cache:/tmp/.ivy
       - ./example:/tmp/example
+      - ./src:/tmp/src
     networks:
       - data-platform
     restart: unless-stopped

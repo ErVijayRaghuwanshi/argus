@@ -54,3 +54,6 @@ target/
 .gradle/
 .m2/
 bin/
+
+# parquet files
+src/parquet

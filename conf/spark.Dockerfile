@@ -14,7 +14,9 @@ RUN pip3 install --no-cache-dir \
     "grpcio>=1.48.1" \
     "protobuf<7.0.0" \
     "grpcio-status>=1.48.1" \
-    "zstandard>=0.25.0"
+    "zstandard>=0.25.0" \
+    "redis" \
+    "neo4j"
 
 # Copy Spark defaults configuration for packages and caching
 COPY conf/spark-defaults.conf /opt/spark/conf/spark-defaults.conf
