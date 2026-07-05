@@ -34,8 +34,8 @@ Make sure the sandbox containers are built and running. From the project root, e
 docker compose up -d
 ```
 
-### Step 2: Submit the Spark Streaming Job
-Submit the Python script to the standalone Spark master cluster. The shared `./src` folder is mapped to `/tmp/src` inside the container:
+### Step 2: Running the Imperative Pipeline
+Submit the standard PySpark Structured Streaming script to the standalone Spark master cluster. The shared `./src` folder is mapped to `/tmp/src` inside the container:
 
 ```bash
 docker exec -it spark-master /opt/spark/bin/spark-submit \
@@ -50,6 +50,19 @@ docker exec -it spark-master /opt/spark/bin/spark-submit \
   --master spark://spark-master:7077 \
   /tmp/src/cdr_streaming_pipeline.py --clear
 ```
+
+### Step 3: Running the Spark Declarative Pipeline (SDP)
+Alternatively, a declarative implementation of the Bronze and Silver stages is available at [cdr_declarative_pipeline.py](file:///Users/ervijay/Documents/Programs/Repo/argus/src/cdr_declarative_pipeline.py) using the Spark 4.1+ Declarative Pipelines (SDP) API.
+
+It utilizes `@dp.table` decorators to model the ingestion graph. Run it via the `spark-pipelines` CLI inside the `spark-master` container, using the [spark-pipeline.yml](file:///Users/ervijay/Documents/Programs/Repo/argus/src/spark-pipeline.yml) specification:
+
+```bash
+# Execute the SDP pipeline using the Spark pipelines runner
+docker exec -it spark-master /opt/spark/bin/spark-pipelines run --spec /tmp/src/spark-pipeline.yml
+```
+
+SDP will execute the streaming flows to completion and write the materialized output tables under the container's Spark warehouse directory: `/opt/spark/work-dir/spark-warehouse/cdr_bronze` and `/opt/spark/work-dir/spark-warehouse/cdr_silver`.
+
 
 ---
 

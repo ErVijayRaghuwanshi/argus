@@ -1,0 +1,5 @@
+name: cdr_pipeline
+storage: file:///tmp/src/parquet/checkpoints
+libraries:
+  - glob:
+      include: cdr_declarative_pipeline.py
