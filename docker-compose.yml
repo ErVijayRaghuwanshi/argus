@@ -8,6 +8,7 @@ services:
     user: "root"
     ports:
       - "${NIFI_PORT:-8443}:8443" # Secure Admin HTTPS UI
+      - "${NIFI_HTTPREQUEST_LISTENER_PORT:-8088}:8088" # HTTP Request Listener for Ingest
     environment:
       SINGLE_USER_CREDENTIALS_USERNAME: "${NIFI_ADMIN_USER}"
       SINGLE_USER_CREDENTIALS_PASSWORD: "${NIFI_ADMIN_PASSWORD}"
@@ -59,7 +60,7 @@ services:
       
       # Network Interfaces & Listeners Configuration
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:${KAFKA_PORT:-9092}"
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
       KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
       KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
@@ -112,7 +113,7 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: "local-kraft"
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:29092"
-      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: "http://schema-registry:${SCHEMA_REGISTRY_PORT:-8081}"
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: "http://schema-registry:8081"
     networks:
       - data-platform
     restart: unless-stopped
@@ -230,6 +231,11 @@ services:
       /opt/spark/bin/spark-class -Dspark.history.fs.logDirectory=file:/opt/spark/event_logs -Dspark.history.ui.port=18080 org.apache.spark.deploy.history.HistoryServer &
       /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master --port 7077 --webui-port 8080
       "
+    environment:
+      NEO4J_PASSWORD: "${NEO4J_PASSWORD}"
+      KAFKA_BOOTSTRAP_SERVERS: "${KAFKA_BOOTSTRAP_SERVERS:-kafka:29092}"
+      SCHEMA_REGISTRY_URL: "${SCHEMA_REGISTRY_URL:-http://schema-registry:8081}"
+      KAFKA_TOPIC: "${KAFKA_TOPIC:-cdr-records}"
     volumes:
       - spark_event_logs:/opt/spark/event_logs
       - spark_ivy_cache:/tmp/.ivy
@@ -255,6 +261,11 @@ services:
       org.apache.spark.deploy.worker.Worker
       spark://spark-master:7077
       --webui-port 8081
+    environment:
+      NEO4J_PASSWORD: "${NEO4J_PASSWORD}"
+      KAFKA_BOOTSTRAP_SERVERS: "${KAFKA_BOOTSTRAP_SERVERS:-kafka:29092}"
+      SCHEMA_REGISTRY_URL: "${SCHEMA_REGISTRY_URL:-http://schema-registry:8081}"
+      KAFKA_TOPIC: "${KAFKA_TOPIC:-cdr-records}"
     volumes:
       - spark_event_logs:/opt/spark/event_logs
       - spark_ivy_cache:/tmp/.ivy
